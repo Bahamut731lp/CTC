@@ -17,12 +17,12 @@ type Car struct {
 	RegisterTime time.Duration
 }
 
-func NewCar(ArrivalTime time.Time, QueueTime, StationTime, RegisterTime time.Duration) *Car {
+func NewCar(ArrivalTime time.Time) *Car {
 	car := Car{}
 	car.ArrivalTime = ArrivalTime
-	car.QueueTime = QueueTime
-	car.StationTime = StationTime
-	car.RegisterTime = RegisterTime
+	car.QueueTime = 0
+	car.StationTime = 0
+	car.RegisterTime = 0
 
 	return &car
 }

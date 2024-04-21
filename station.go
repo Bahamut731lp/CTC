@@ -1,7 +1,6 @@
 package main
 
 import (
-	"math/rand"
 	"time"
 )
 
@@ -18,6 +17,7 @@ type Station struct {
 	IsAvailable  bool
 	TotalCars    int
 	TotalTime    time.Duration
+	MaxQueueTime time.Duration
 }
 
 func getNewStation(StationType string, ServeTimeMin, ServeTimeMax time.Duration) *Station {
@@ -25,16 +25,7 @@ func getNewStation(StationType string, ServeTimeMin, ServeTimeMax time.Duration)
 	station.StationType = StationType
 	station.ServeTimeMin = ServeTimeMin
 	station.ServeTimeMax = ServeTimeMax
+	station.MaxQueueTime = 0
 
 	return &station
-}
-
-func (s *Station) Serve(car *Car) {
-	serveTime := time.Duration(rand.Intn(int(s.ServeTimeMax-s.ServeTimeMin))) + s.ServeTimeMin
-	car.StationTime = serveTime
-	s.IsAvailable = false
-	s.TotalCars++
-	s.TotalTime += serveTime
-	time.Sleep(serveTime)
-	s.IsAvailable = true
 }
