@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+type CarConfig struct {
+	Count          int           `yaml:"count"`
+	ArrivalTimeMin time.Duration `yaml:"arrival_time_min"`
+	ArrivalTimeMax time.Duration `yaml:"arrival_time_max"`
+}
+
 type Car struct {
 	ArrivalTime  time.Time
 	QueueTime    time.Duration
