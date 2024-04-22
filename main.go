@@ -19,7 +19,7 @@ type Config struct {
 }
 
 func getTimeInRange(min, max time.Duration) time.Duration {
-	return time.Duration(rand.Intn(int(max)-int(min+1)) + int(min))
+	return min + time.Duration(rand.Int63n(int64(max-min+1)))
 }
 
 func addNewCarsToQueue(config *Config, queue chan<- Car, wg *sync.WaitGroup) {
@@ -37,19 +37,17 @@ func addNewCarsToQueue(config *Config, queue chan<- Car, wg *sync.WaitGroup) {
 		timeToSleep := getTimeInRange(arrivalTimeMin, arrivalTimeMax)
 		time.Sleep(timeToSleep)
 
-		arrival := time.Now()
-		car := NewCar(arrival)
+		car := NewCar(time.Now())
 		queue <- *car
 		bar.Add(1)
 	}
 }
 
-func getStationRunning(station *Station, queue <-chan Car, wg *sync.WaitGroup) {
-	for car := range queue {
+func getStationRunning(station *Station, input <-chan Car, wg *sync.WaitGroup) {
+	for car := range input {
 		wg.Add(1)
 		serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
 
-		car.StationTime = serveTime
 		car.QueueTime = time.Since(car.ArrivalTime)
 		car.StationTime = serveTime
 
@@ -65,16 +63,29 @@ func getStationRunning(station *Station, queue <-chan Car, wg *sync.WaitGroup) {
 	}
 }
 
+func getRegisterRunning(config *Config, input <-chan Car, wg *sync.WaitGroup) {
+	for car := range input {
+		wg.Add(1)
+		serveTime := getTimeInRange(config.Registers.HandleTimeMin, config.Registers.HandleTimeMax)
+
+		time.Sleep(serveTime)
+		car.RegisterTime = serveTime
+		wg.Done()
+	}
+}
+
 func main() {
 	config := getConfigFromFile("config.yml")
 	var wg sync.WaitGroup
 
-	queue := make(chan Car)
+	toBeServedQueue := make(chan Car)
+	//departed := make(chan Car)
+
 	stations := []*Station{}
 
 	log.Printf("Simulating gas station with %d cars.\n", config.Cars.Count)
 
-	go addNewCarsToQueue(config, queue, &wg)
+	go addNewCarsToQueue(config, toBeServedQueue, &wg)
 
 	// Vytváření nových stanic
 	for stationType, stationConfig := range config.Stations {
@@ -83,11 +94,12 @@ func main() {
 			station := getNewStation(stationType, stationConfig.ServeTimeMin, stationConfig.ServeTimeMax)
 			stations = append(stations, station)
 
-			go getStationRunning(station, queue, &wg)
+			go getStationRunning(station, toBeServedQueue, &wg)
 		}
 	}
 
 	wg.Wait()
+
 	log.Println("Simulation ended.")
 	log.Println("Calculating statistics.")
 
@@ -112,5 +124,5 @@ func main() {
 	// Render the table
 	table.Render()
 
-	println(fmt.Sprint(len(stations)), fmt.Sprint(len(queue)))
+	println(fmt.Sprint(len(stations)), fmt.Sprint(len(toBeServedQueue)))
 }
