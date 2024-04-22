@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
-
-	"github.com/olekukonko/tablewriter"
 )
 
 type Config struct {
@@ -27,92 +24,6 @@ func getTimeInRange(min, max time.Duration) time.Duration {
 	finalDuration := min + randomDuration
 
 	return finalDuration
-}
-
-func setStationRoutine(station *Station, input chan *Car, output chan *Car, wg *sync.WaitGroup) {
-	for car := range input {
-		queueTime := time.Since(car.ArrivalTime)
-		serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
-
-		station.TotalCars += 1
-		station.TotalTime += serveTime
-
-		car.QueueTime = queueTime
-		car.StationTime = serveTime
-		if car.QueueTime > station.MaxQueueTime {
-			station.MaxQueueTime = car.QueueTime
-		}
-
-		time.Sleep(serveTime)
-		wg.Done()
-
-		select {
-		case output <- car:
-			// Successfully moved the value from ch1 to ch2
-		default:
-			// ch2 is not ready to receive, skip this value for now
-			fmt.Println("ch2 is not ready to receive, skipping value.")
-		}
-	}
-}
-
-func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup) {
-	for car := range input {
-		//queueTime := time.Since(car.ArrivalTime)
-		serveTime := getTimeInRange(register.HandleTimeMin, register.HandleTimeMax)
-		car.RegisterTime = serveTime
-
-		register.TotalCars += 1
-		register.TotalTime += serveTime
-
-		time.Sleep(serveTime)
-		wg.Done()
-	}
-}
-
-func renderStationsStats(stations []*Station) {
-	table := tablewriter.NewWriter(os.Stdout)
-	// Define table headers
-	table.SetHeader([]string{"Type", "Total Cars", "Total Time", "Average Queue Time", "Maximum Queue Time"})
-
-	// Add table rows
-	for i := 0; i < len(stations); i++ {
-		station := stations[i]
-		table.Append([]string{station.StationType, fmt.Sprint(station.TotalCars), fmt.Sprint(station.TotalTime), fmt.Sprint(station.TotalTime / time.Duration(station.TotalCars)), fmt.Sprint(station.MaxQueueTime)})
-	}
-
-	// Set alignment for columns
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-
-	// Set the table format
-	table.SetBorder(false)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-
-	// Render the table
-	table.Render()
-}
-
-func renderRegistersStats(registers []*Register) {
-	table := tablewriter.NewWriter(os.Stdout)
-	// Define table headers
-	table.SetHeader([]string{"Type", "Total Cars", "Total Time"})
-
-	// Add table rows
-	for i, register := range registers {
-		table.Append([]string{fmt.Sprint(i), fmt.Sprint(register.TotalCars), fmt.Sprint(register.TotalTime)})
-	}
-
-	// Set alignment for columns
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-
-	// Set the table format
-	table.SetBorder(false)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-
-	// Render the table
-	table.Render()
 }
 
 func main() {
@@ -141,6 +52,7 @@ func main() {
 		register.HandleTimeMax = config.Registers.HandleTimeMax
 		register.TotalCars = 0
 		register.TotalTime = 0
+		register.MaxQueueTime = 0
 
 		registers = append(registers, &register)
 	}
@@ -162,6 +74,10 @@ func main() {
 			station.StationType = fmt.Sprintf("%s %d", _type, i)
 			station.ServeTimeMin = config.ServeTimeMin
 			station.ServeTimeMax = config.ServeTimeMax
+			station.MaxQueueTime = 0
+			station.TotalCars = 0
+			station.TotalTime = 0
+			station.TotalQueueTime = 0
 
 			stations = append(stations, &station)
 		}
