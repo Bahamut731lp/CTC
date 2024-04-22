@@ -38,12 +38,41 @@ func getTimeInRange(min, max time.Duration) time.Duration {
 	return min + time.Duration(rand.Int63n(int64(max-min+1)))
 }
 
+func setStationRoutine(station *Station, input chan *Car, output chan *Car, wg *sync.WaitGroup) {
+	for car := range input {
+		queueTime := time.Since(car.ArrivalTime)
+		serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
+
+		station.TotalCars += 1
+		station.TotalTime += serveTime
+
+		car.QueueTime = queueTime
+		car.StationTime = serveTime
+		if car.QueueTime > station.MaxQueueTime {
+			station.MaxQueueTime = car.QueueTime
+		}
+
+		time.Sleep(serveTime)
+		output <- car
+		wg.Done()
+	}
+}
+
+func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup) {
+	for car := range input {
+		//queueTime := time.Since(car.ArrivalTime)
+		serveTime := getTimeInRange(register.HandleTimeMin, register.HandleTimeMax)
+		car.RegisterTime = serveTime
+
+		time.Sleep(serveTime)
+		wg.Done()
+	}
+}
+
 func main() {
 	var wg sync.WaitGroup
 	config := getConfigFromFile("config.yml")
 
-	//arrivalTimeMin := config.Cars.ArrivalTimeMin
-	//arrivalTimeMax := config.Cars.ArrivalTimeMax
 	noOfStations := 0
 	noOfRegisters := config.Registers.Count
 
@@ -55,17 +84,17 @@ func main() {
 	}
 
 	stations := []*Station{}
-	registers := make(chan *Register, noOfRegisters)
+	registers := []*Register{}
 
 	inbound := make(chan *Car, config.Cars.Count)
-	//outbound := make(chan *Car, config.Cars.Count)
+	outbound := make(chan *Car, config.Cars.Count)
 
 	for range noOfRegisters {
 		register := Register{}
 		register.HandleTimeMin = config.Registers.HandleTimeMin
 		register.HandleTimeMax = config.Registers.HandleTimeMax
 
-		registers <- &register
+		registers = append(registers, &register)
 	}
 
 	// Spawning cars
@@ -85,26 +114,15 @@ func main() {
 		station.ServeTimeMax = config.ServeTimeMax
 
 		stations = append(stations, &station)
-
-		go func(station *Station, input chan *Car, wg *sync.WaitGroup) {
-			for car := range input {
-				queueTime := time.Since(car.ArrivalTime)
-				serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
-
-				station.TotalCars += 1
-				station.TotalTime += serveTime
-
-				car.QueueTime = queueTime
-				car.StationTime = serveTime
-				if car.QueueTime > station.MaxQueueTime {
-					station.MaxQueueTime = car.QueueTime
-				}
-
-				time.Sleep(serveTime)
-				wg.Done()
-			}
-		}(&station, inbound, &wg)
 	}
+
+	for _, station := range stations {
+		go setStationRoutine(station, inbound, outbound, &wg)
+	}
+
+	// for _, register := range registers {
+	// 	go setRegisterRoutine(register, outbound, &wg)
+	// }
 
 	wg.Wait()
 
