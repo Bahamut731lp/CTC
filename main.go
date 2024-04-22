@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 type Config struct {
@@ -26,6 +28,19 @@ func getTimeInRange(min, max time.Duration) time.Duration {
 	return finalDuration
 }
 
+func setCarsRoutine(config *Config, wg, wg2 *sync.WaitGroup, output chan *Car) {
+	for range config.Cars.Count {
+		wg.Add(1)
+		wg2.Add(1)
+
+		car := NewCar(time.Now())
+		car.ArrivalTime = time.Now()
+		time.Sleep(getTimeInRange(config.Cars.ArrivalTimeMin, config.Cars.ArrivalTimeMax))
+		output <- car
+	}
+
+}
+
 func main() {
 	var wg, wg2 sync.WaitGroup
 	config := getConfigFromFile("config.yml")
@@ -42,6 +57,7 @@ func main() {
 
 	stations := []*Station{}
 	registers := []*Register{}
+	bar := progressbar.Default(int64(config.Cars.Count))
 
 	inbound := make(chan *Car, config.Cars.Count)
 	outbound := make(chan *Car, config.Cars.Count)
@@ -57,15 +73,7 @@ func main() {
 		registers = append(registers, &register)
 	}
 
-	// Spawning cars
-	for range config.Cars.Count {
-		wg.Add(1)
-		wg2.Add(1)
-
-		car := NewCar(time.Now())
-		car.ArrivalTime = time.Now()
-		inbound <- car
-	}
+	go setCarsRoutine(config, &wg, &wg2, inbound)
 
 	// Fill up stations and registers
 	for _type, config := range config.Stations {
@@ -88,7 +96,7 @@ func main() {
 	}
 
 	for _, register := range registers {
-		go setRegisterRoutine(register, outbound, &wg2)
+		go setRegisterRoutine(register, outbound, &wg2, bar)
 	}
 
 	wg.Wait()

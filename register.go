@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/schollz/progressbar/v3"
 )
 
 type Register struct {
@@ -18,7 +19,7 @@ type Register struct {
 	MaxQueueTime  time.Duration
 }
 
-func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup) {
+func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup, bar *progressbar.ProgressBar) {
 	for car := range input {
 		//queueTime := time.Since(car.ArrivalTime)
 		serveTime := getTimeInRange(register.HandleTimeMin, register.HandleTimeMax)
@@ -34,6 +35,7 @@ func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup)
 
 		time.Sleep(serveTime)
 		wg.Done()
+		bar.Add(1)
 	}
 }
 

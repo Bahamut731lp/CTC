@@ -61,8 +61,8 @@ func renderStationsStats(stations []*Station) {
 	table.SetHeader([]string{"Type", "Total Cars", "Total Time", "Average Queue Time", "Maximum Queue Time"})
 
 	// Add table rows
-	for i, station := range stations {
-		table.Append([]string{fmt.Sprintf("%s %d", station.StationType, i), fmt.Sprint(station.TotalCars), fmt.Sprint(station.TotalTime), fmt.Sprint(station.TotalQueueTime / time.Duration(station.TotalCars)), fmt.Sprint(station.MaxQueueTime)})
+	for _, station := range stations {
+		table.Append([]string{station.StationType, fmt.Sprint(station.TotalCars), fmt.Sprint(station.TotalTime), fmt.Sprint(station.TotalQueueTime / time.Duration(station.TotalCars)), fmt.Sprint(station.MaxQueueTime)})
 	}
 
 	// Set alignment for columns
