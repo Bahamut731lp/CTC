@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
-	"github.com/schollz/progressbar/v3"
 )
 
 type Config struct {
@@ -18,84 +17,93 @@ type Config struct {
 	Registers Register                 `yaml:"count"` //TODO: Kasy řešit něco jako semaforama i guess?
 }
 
+func process(car *Car, station Station, stations *sync.Pool) {
+	// Serving at the station
+	queueTime := time.Since(car.ArrivalTime)
+	serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
+	station.TotalCars += 1
+	station.TotalTime += serveTime
+
+	car.QueueTime = queueTime
+	car.StationTime = serveTime
+	if car.QueueTime > station.MaxQueueTime {
+		station.MaxQueueTime = car.QueueTime
+	}
+
+	log.Printf("Car is done\n")
+	stations.Put(station)
+}
+
 func getTimeInRange(min, max time.Duration) time.Duration {
 	return min + time.Duration(rand.Int63n(int64(max-min+1)))
 }
 
-func addNewCarsToQueue(config *Config, queue chan<- Car, wg *sync.WaitGroup) {
-	wg.Add(1)
-	defer wg.Done()
-
-	max := config.Cars.Count
-	arrivalTimeMin := config.Cars.ArrivalTimeMin
-	arrivalTimeMax := config.Cars.ArrivalTimeMax
-
-	log.Printf("Started adding %d cars into the simulation\n", max)
-	bar := progressbar.Default(int64(max))
-
-	for i := 0; i < max; i++ {
-		timeToSleep := getTimeInRange(arrivalTimeMin, arrivalTimeMax)
-		time.Sleep(timeToSleep)
-
-		car := NewCar(time.Now())
-		queue <- *car
-		bar.Add(1)
-	}
-}
-
-func getStationRunning(station *Station, input <-chan Car, wg *sync.WaitGroup) {
-	for car := range input {
-		wg.Add(1)
-		serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
-
-		car.QueueTime = time.Since(car.ArrivalTime)
-		car.StationTime = serveTime
-
-		station.TotalCars++
-		station.TotalTime += serveTime
-
-		if station.MaxQueueTime < car.QueueTime {
-			station.MaxQueueTime = car.QueueTime
-		}
-
-		time.Sleep(serveTime)
-		wg.Done()
-	}
-}
-
-func getRegisterRunning(config *Config, input <-chan Car, wg *sync.WaitGroup) {
-	for car := range input {
-		wg.Add(1)
-		serveTime := getTimeInRange(config.Registers.HandleTimeMin, config.Registers.HandleTimeMax)
-
-		time.Sleep(serveTime)
-		car.RegisterTime = serveTime
-		wg.Done()
-	}
-}
-
 func main() {
-	config := getConfigFromFile("config.yml")
 	var wg sync.WaitGroup
+	config := getConfigFromFile("config.yml")
 
-	toBeServedQueue := make(chan Car)
-	//departed := make(chan Car)
-
-	stations := []*Station{}
+	//arrivalTimeMin := config.Cars.ArrivalTimeMin
+	//arrivalTimeMax := config.Cars.ArrivalTimeMax
+	noOfStations := 0
+	noOfRegisters := config.Registers.Count
 
 	log.Printf("Simulating gas station with %d cars.\n", config.Cars.Count)
 
-	go addNewCarsToQueue(config, toBeServedQueue, &wg)
+	// Count the number of stations to allocate buffered channel
+	for _, stationConfig := range config.Stations {
+		noOfStations += stationConfig.Count
+	}
 
-	// Vytváření nových stanic
-	for stationType, stationConfig := range config.Stations {
-		log.Printf("Adding %d %s stand(s)\n", stationConfig.Count, stationType)
-		for range stationConfig.Count {
-			station := getNewStation(stationType, stationConfig.ServeTimeMin, stationConfig.ServeTimeMax)
-			stations = append(stations, station)
+	stations := []*Station{}
+	registers := make(chan *Register, noOfRegisters)
 
-			go getStationRunning(station, toBeServedQueue, &wg)
-		}
+	inbound := make(chan *Car, config.Cars.Count)
+	//outbound := make(chan *Car, config.Cars.Count)
+
+	for range noOfRegisters {
+		register := Register{}
+		register.HandleTimeMin = config.Registers.HandleTimeMin
+		register.HandleTimeMax = config.Registers.HandleTimeMax
+
+		registers <- &register
+	}
+
+	// Spawning cars
+	for range config.Cars.Count {
+		wg.Add(1)
+
+		car := NewCar(time.Now())
+		car.ArrivalTime = time.Now()
+		inbound <- car
+	}
+
+	// Fill up stations and registers
+	for _type, config := range config.Stations {
+		station := Station{}
+		station.StationType = _type
+		station.ServeTimeMin = config.ServeTimeMin
+		station.ServeTimeMax = config.ServeTimeMax
+
+		stations = append(stations, &station)
+
+		go func(station *Station, input chan *Car, wg *sync.WaitGroup) {
+			for car := range input {
+				queueTime := time.Since(car.ArrivalTime)
+				serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
+
+				station.TotalCars += 1
+				station.TotalTime += serveTime
+
+				car.QueueTime = queueTime
+				car.StationTime = serveTime
+				if car.QueueTime > station.MaxQueueTime {
+					station.MaxQueueTime = car.QueueTime
+				}
+
+				time.Sleep(serveTime)
+				wg.Done()
+			}
+		}(&station, inbound, &wg)
 	}
 
 	wg.Wait()
@@ -124,5 +132,4 @@ func main() {
 	// Render the table
 	table.Render()
 
-	println(fmt.Sprint(len(stations)), fmt.Sprint(len(toBeServedQueue)))
 }
