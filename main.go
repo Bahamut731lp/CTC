@@ -14,24 +14,7 @@ import (
 type Config struct {
 	Cars      CarConfig                `yaml:"cars"`
 	Stations  map[string]StationConfig `yaml:"stations"`
-	Registers Register                 `yaml:"count"` //TODO: Kasy řešit něco jako semaforama i guess?
-}
-
-func process(car *Car, station Station, stations *sync.Pool) {
-	// Serving at the station
-	queueTime := time.Since(car.ArrivalTime)
-	serveTime := getTimeInRange(station.ServeTimeMin, station.ServeTimeMax)
-	station.TotalCars += 1
-	station.TotalTime += serveTime
-
-	car.QueueTime = queueTime
-	car.StationTime = serveTime
-	if car.QueueTime > station.MaxQueueTime {
-		station.MaxQueueTime = car.QueueTime
-	}
-
-	log.Printf("Car is done\n")
-	stations.Put(station)
+	Registers Register                 `yaml:"registers"` //TODO: Kasy řešit něco jako semaforama i guess?
 }
 
 func getTimeInRange(min, max time.Duration) time.Duration {
@@ -53,8 +36,15 @@ func setStationRoutine(station *Station, input chan *Car, output chan *Car, wg *
 		}
 
 		time.Sleep(serveTime)
-		output <- car
 		wg.Done()
+
+		select {
+		case output <- car:
+			// Successfully moved the value from ch1 to ch2
+		default:
+			// ch2 is not ready to receive, skip this value for now
+			fmt.Println("ch2 is not ready to receive, skipping value.")
+		}
 	}
 }
 
@@ -64,13 +54,16 @@ func setRegisterRoutine(register *Register, input chan *Car, wg *sync.WaitGroup)
 		serveTime := getTimeInRange(register.HandleTimeMin, register.HandleTimeMax)
 		car.RegisterTime = serveTime
 
+		register.TotalCars += 1
+		register.TotalTime += serveTime
+
 		time.Sleep(serveTime)
 		wg.Done()
 	}
 }
 
 func main() {
-	var wg sync.WaitGroup
+	var wg, wg2 sync.WaitGroup
 	config := getConfigFromFile("config.yml")
 
 	noOfStations := 0
@@ -93,6 +86,8 @@ func main() {
 		register := Register{}
 		register.HandleTimeMin = config.Registers.HandleTimeMin
 		register.HandleTimeMax = config.Registers.HandleTimeMax
+		register.TotalCars = 0
+		register.TotalTime = 0
 
 		registers = append(registers, &register)
 	}
@@ -100,6 +95,7 @@ func main() {
 	// Spawning cars
 	for range config.Cars.Count {
 		wg.Add(1)
+		wg2.Add(1)
 
 		car := NewCar(time.Now())
 		car.ArrivalTime = time.Now()
@@ -120,11 +116,12 @@ func main() {
 		go setStationRoutine(station, inbound, outbound, &wg)
 	}
 
-	// for _, register := range registers {
-	// 	go setRegisterRoutine(register, outbound, &wg)
-	// }
+	for _, register := range registers {
+		go setRegisterRoutine(register, outbound, &wg2)
+	}
 
 	wg.Wait()
+	wg2.Wait()
 
 	log.Println("Simulation ended.")
 	log.Println("Calculating statistics.")
@@ -137,6 +134,26 @@ func main() {
 	for i := 0; i < len(stations); i++ {
 		station := stations[i]
 		table.Append([]string{station.StationType, fmt.Sprint(station.TotalCars), fmt.Sprint(station.TotalTime), fmt.Sprint(station.TotalTime / time.Duration(station.TotalCars)), fmt.Sprint(station.MaxQueueTime)})
+	}
+
+	// Set alignment for columns
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+
+	// Set the table format
+	table.SetBorder(false)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+
+	// Render the table
+	table.Render()
+
+	table = tablewriter.NewWriter(os.Stdout)
+	// Define table headers
+	table.SetHeader([]string{"Type", "Total Cars", "Total Time"})
+
+	// Add table rows
+	for i, register := range registers {
+		table.Append([]string{fmt.Sprint(i), fmt.Sprint(register.TotalCars), fmt.Sprint(register.TotalTime)})
 	}
 
 	// Set alignment for columns
