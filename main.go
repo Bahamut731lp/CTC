@@ -102,6 +102,9 @@ func main() {
 	wg.Wait()
 	wg2.Wait()
 
+	close(inbound)
+	close(outbound)
+
 	log.Println("Simulation ended.")
 	log.Println("Calculating statistics.")
 
